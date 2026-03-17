@@ -133,6 +133,12 @@ LABEL, FACE, and POSITION control displayed label."
          (move-overlay ov pos (min (1+ pos) max-end) buf)
          (flash--reset-overlay-decoration ov)
          (overlay-put ov 'display label-str))
+        ('overlay-expand
+         (let ((eol (with-current-buffer buf
+                      (save-excursion (goto-char pos) (line-end-position)))))
+           (move-overlay ov pos (min (+ pos (length display-label)) eol max-end) buf))
+         (flash--reset-overlay-decoration ov)
+         (overlay-put ov 'display label-str))
         ('pre-overlay
          (if (and (> pos (point-min))
                   (not (eq (char-before pos) ?\n)))
@@ -163,7 +169,9 @@ LABEL, FACE, and POSITION control displayed label."
          (match-pool (car pools))
          (label-pool (cdr pools))
          new-overlays
-         (index 0))
+         (index 0)
+         (overlay-expand-p (eq flash-label-position 'overlay-expand))
+         claimed-positions)
     (dolist (match (flash-state-matches state))
       (let* ((pos (flash-match-pos-value match))
              (end-pos (flash-match-end-pos-value match))
@@ -173,9 +181,14 @@ LABEL, FACE, and POSITION control displayed label."
              (win (flash-match-window match))
              (show-label (and label
                               (or (not prefix)
-                                  (string-prefix-p prefix label))))
+                                  (string-prefix-p prefix label))
+                              (or (not overlay-expand-p)
+                                  (not (memql pos claimed-positions)))))
              (face (when show-label (flash--get-label-face index)))
              (buf (flash-match-buffer-live match)))
+        (when (and show-label overlay-expand-p)
+          (cl-loop for i from 1 below (length label)
+                   do (push (+ pos i) claimed-positions)))
         (when (and (buffer-live-p buf)
                    (integerp pos)
                    (integerp end-pos))

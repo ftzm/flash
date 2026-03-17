@@ -356,6 +356,88 @@ Default shade 5: bg from shade-500, fg from shade-950."
         (should (= 1 (overlay-start label-ov)))
         (should (= 2 (overlay-end label-ov)))))))
 
+(ert-deftest flash-highlight-label-position-overlay-expand-test ()
+  "Test overlay-expand covers as many chars as the label is long."
+  (with-temp-buffer
+    (insert "foo bar")
+    (goto-char (point-min))
+    (set-window-buffer (selected-window) (current-buffer))
+    (let ((state (flash-state-create (list (selected-window))))
+          (flash-backdrop nil)
+          (flash-highlight-matches t)
+          (flash-label-position 'overlay-expand))
+      (setf (flash-state-matches state)
+            (list (make-flash-match
+                   :pos (copy-marker 1)
+                   :end-pos (copy-marker 4)
+                   :label "xy"
+                   :window (selected-window)
+                   :fold nil)))
+      (flash-highlight-update state)
+      (let ((label-ov (seq-find (lambda (ov) (overlay-get ov 'display))
+                                (flash-state-overlays state))))
+        (should label-ov)
+        (should (string= "xy" (overlay-get label-ov 'display)))
+        ;; Overlay should cover 2 characters (matching label length)
+        (should (= 2 (- (overlay-end label-ov) (overlay-start label-ov))))))))
+
+(ert-deftest flash-highlight-label-position-overlay-expand-adjacent-test ()
+  "Test overlay-expand favors earlier match for adjacent matches."
+  (with-temp-buffer
+    (insert "atten")
+    (goto-char (point-min))
+    (set-window-buffer (selected-window) (current-buffer))
+    (let ((state (flash-state-create (list (selected-window))))
+          (flash-backdrop nil)
+          (flash-highlight-matches t)
+          (flash-label-position 'overlay-expand))
+      ;; Two adjacent matches at positions 2 and 3 (the "tt")
+      (setf (flash-state-matches state)
+            (list (make-flash-match
+                   :pos (copy-marker 2)
+                   :end-pos (copy-marker 3)
+                   :label "xy"
+                   :window (selected-window)
+                   :fold nil)
+                  (make-flash-match
+                   :pos (copy-marker 3)
+                   :end-pos (copy-marker 4)
+                   :label "ab"
+                   :window (selected-window)
+                   :fold nil)))
+      (flash-highlight-update state)
+      ;; First match at 2 claims pos 3, so it keeps its label.
+      ;; Second match at 3 is skipped (pos 3 is claimed by first label).
+      (let ((label-ovs (seq-filter (lambda (ov) (overlay-get ov 'display))
+                                   (flash-state-overlays state))))
+        (should (= 1 (length label-ovs)))
+        (should (= 2 (overlay-start (car label-ovs))))))))
+
+(ert-deftest flash-highlight-label-position-overlay-expand-eol-test ()
+  "Test overlay-expand clamps to end of line."
+  (with-temp-buffer
+    (insert "ab\ncd")
+    (goto-char (point-min))
+    (set-window-buffer (selected-window) (current-buffer))
+    (let ((state (flash-state-create (list (selected-window))))
+          (flash-backdrop nil)
+          (flash-highlight-matches t)
+          (flash-label-position 'overlay-expand))
+      ;; Match at position 2 ("b"), right before newline
+      (setf (flash-state-matches state)
+            (list (make-flash-match
+                   :pos (copy-marker 2)
+                   :end-pos (copy-marker 3)
+                   :label "xy"
+                   :window (selected-window)
+                   :fold nil)))
+      (flash-highlight-update state)
+      (let ((label-ov (seq-find (lambda (ov) (overlay-get ov 'display))
+                                (flash-state-overlays state))))
+        (should label-ov)
+        ;; Overlay should not cross the newline at position 3
+        (should (<= (overlay-end label-ov) 3))))))
+
 (ert-deftest flash-highlight-label-position-defcustom-test ()
   "Test that label-position defcustom exists."
   (should (boundp 'flash-label-position)))
